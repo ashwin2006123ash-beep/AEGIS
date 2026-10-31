@@ -8,6 +8,9 @@ from .api.scenarios import router as scenarios_router
 from .api.ingest import router as ingest_router
 from .api.analysis import router as analysis_router
 from .api.governance import router as governance_router
+from .api.auth import router as auth_router
+from .api.client import router as client_router
+from .api.admin import router as admin_router
 from .database import init_db
 from .services.data_store import data_store
 
@@ -29,6 +32,9 @@ app.add_middleware(
 )
 
 # Include Routers
+app.include_router(auth_router)
+app.include_router(client_router)
+app.include_router(admin_router)
 app.include_router(dashboard_router)
 app.include_router(scenarios_router)
 app.include_router(ingest_router)

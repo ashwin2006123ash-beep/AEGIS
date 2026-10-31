@@ -5,10 +5,44 @@ import type {
   CustomScenarioRequest,
   GovernanceAuditRecord,
   CapacityForecast,
-  TelemetryEvent
+  TelemetryEvent,
+  UserProfile,
+  DemoUser,
+  ClientOrganizationProfile,
+  ClientAnalysisResponse,
+  AdminLocation,
+  AdminOrganization,
+  AdminSummaryResponse,
+  AdminRecommendation,
 } from '../types';
 
 const API_BASE = 'http://localhost:8000';
+
+let authToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('aegis_auth_token') : null;
+
+export const setAuthToken = (token: string | null) => {
+  authToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('aegis_auth_token', token);
+    } else {
+      localStorage.removeItem('aegis_auth_token');
+    }
+  }
+};
+
+export const getAuthToken = () => authToken;
+
+function getAuthHeaders(includeContentType: boolean = true): HeadersInit {
+  const headers: Record<string, string> = {};
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+  return headers;
+}
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -25,7 +59,187 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  // Dashboard & Health
+  // Authentication & Session
+  async login(username: string, password: string): Promise<{ access_token: string; token_type: string; user: UserProfile }> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await handleResponse<{ access_token: string; token_type: string; user: UserProfile }>(res);
+    setAuthToken(data.access_token);
+    return data;
+  },
+
+  async getMe(): Promise<{ status: string; user: UserProfile }> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/me`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async getDemoUsers(): Promise<DemoUser[]> {
+    const res = await fetch(`${API_BASE}/api/v1/auth/demo-users`);
+    return handleResponse(res);
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await fetch(`${API_BASE}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: getAuthHeaders(false),
+      });
+    } catch (e) {
+      console.warn('Logout API failed, continuing local clear', e);
+    }
+    setAuthToken(null);
+  },
+
+  // Client Dashboard API (Tenant Isolated)
+  async getClientProfile(orgId?: string): Promise<ClientOrganizationProfile> {
+    const url = orgId 
+      ? `${API_BASE}/api/v1/client/profile?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/profile`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  async getClientAnalysis(orgId?: string): Promise<ClientAnalysisResponse> {
+    const url = orgId
+      ? `${API_BASE}/api/v1/client/analysis?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/analysis`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  async getClientTimeline(orgId?: string): Promise<{ organization_id: string; timeline: any[] }> {
+    const url = orgId
+      ? `${API_BASE}/api/v1/client/timeline?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/timeline`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  async syncClientConnector(orgId?: string): Promise<{ status: string; organization_id: string; last_sync: string; message: string }> {
+    const url = orgId
+      ? `${API_BASE}/api/v1/client/connector/sync?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/connector/sync`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async updateClientConnectorConfig(
+    config: { endpoint_url: string; auth_type?: string; cadence?: string; small_cell_masking?: boolean },
+    orgId?: string
+  ): Promise<{ status: string; message: string }> {
+    const url = orgId
+      ? `${API_BASE}/api/v1/client/connector/config?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/connector/config`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(config),
+    });
+    return handleResponse(res);
+  },
+
+  async uploadClientCsv(file: File, orgId?: string): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (orgId) {
+      formData.append('org_id', orgId);
+    }
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const res = await fetch(`${API_BASE}/api/v1/client/upload-csv`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    return handleResponse(res);
+  },
+
+  async getClientAuditLog(orgId?: string): Promise<{ organization_id: string; total_records: number; recent_observations: any[] }> {
+    const url = orgId
+      ? `${API_BASE}/api/v1/client/audit-log?org_id=${encodeURIComponent(orgId)}`
+      : `${API_BASE}/api/v1/client/audit-log`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  // Central Public Health Dashboard API (Admin Command Center)
+  async getAdminLocations(): Promise<{ status: string; count: number; locations: AdminLocation[] }> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/locations`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminOrganizations(locationId?: string): Promise<{ status: string; count: number; organizations: AdminOrganization[] }> {
+    const url = locationId
+      ? `${API_BASE}/api/v1/admin/organizations?location_id=${encodeURIComponent(locationId)}`
+      : `${API_BASE}/api/v1/admin/organizations`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  async getAdminSummary(locationId: string = 'SATHYAMANGALAM'): Promise<AdminSummaryResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/summary?location_id=${encodeURIComponent(locationId)}`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminTimeline(locationId: string = 'SATHYAMANGALAM'): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/timeline?location_id=${encodeURIComponent(locationId)}`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminForecast(locationId: string = 'SATHYAMANGALAM'): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/forecast?location_id=${encodeURIComponent(locationId)}`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminRecommendations(locationId: string = 'SATHYAMANGALAM'): Promise<{ location_id: string; decision_tier: string; recommendations: AdminRecommendation[] }> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/recommendations?location_id=${encodeURIComponent(locationId)}`, {
+      headers: getAuthHeaders(false),
+    });
+    return handleResponse(res);
+  },
+
+  async recordAdminGovernanceAction(data: {
+    action: string;
+    location_id: string;
+    rationale: string;
+    recommendation_id?: string;
+    priority_level?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/admin/governance/action`, {
+      method: 'POST',
+      headers: getAuthHeaders(true),
+      body: JSON.stringify(data),
+    });
+    return handleResponse(res);
+  },
+
+  async getAdminAuditLog(locationId?: string, limit: number = 50): Promise<{ status: string; count: number; audit_logs: GovernanceAuditRecord[] }> {
+    const url = locationId
+      ? `${API_BASE}/api/v1/admin/governance/audit-log?location_id=${encodeURIComponent(locationId)}&limit=${limit}`
+      : `${API_BASE}/api/v1/admin/governance/audit-log?limit=${limit}`;
+    const res = await fetch(url, { headers: getAuthHeaders(false) });
+    return handleResponse(res);
+  },
+
+  // Legacy & Shared Platform APIs
   async checkHealth(): Promise<{ status: string; service: string }> {
     const res = await fetch(`${API_BASE}/health`);
     return handleResponse(res);
@@ -36,7 +250,6 @@ export const api = {
     return handleResponse(res);
   },
 
-  // Scenarios
   async listScenarios(): Promise<any[]> {
     const res = await fetch(`${API_BASE}/api/v1/scenarios`);
     return handleResponse(res);
@@ -56,7 +269,6 @@ export const api = {
     return handleResponse(res);
   },
 
-  // Ingestion & Webhooks
   async getIngestionStatus(): Promise<IngestionStatusResponse> {
     const res = await fetch(`${API_BASE}/api/v1/ingestion/status`);
     return handleResponse(res);
@@ -89,7 +301,6 @@ export const api = {
     return handleResponse(res);
   },
 
-  // Analysis & Timeline
   async getTimeline(zoneId: string = 'Z1_SATHY'): Promise<any> {
     const res = await fetch(`${API_BASE}/api/v1/analysis/timeline?zone_id=${encodeURIComponent(zoneId)}`);
     return handleResponse(res);
@@ -114,7 +325,6 @@ export const api = {
     return handleResponse(res);
   },
 
-  // Governance
   async recordGovernanceAction(actionData: {
     reviewer_id: string;
     action: string;

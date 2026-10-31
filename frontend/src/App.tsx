@@ -2,17 +2,35 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { TelemetryHubPage } from './pages/TelemetryHubPage';
 import { CommandCenterPage } from './pages/CommandCenterPage';
+import { ClientDashboardPage } from './pages/ClientDashboardPage';
 import { CustomSignalModal } from './components/CustomSignalModal';
-import { api } from './services/api';
+import { RoleSwitcherModal } from './components/RoleSwitcherModal';
+import { api, getAuthToken } from './services/api';
 import type {
   DashboardSummaryResponse,
   IngestionStatusResponse,
   TimelinePoint,
   TelemetryEvent,
+  UserProfile,
 } from './types';
 
 export const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<'telemetry' | 'command'>('command');
+  // Check URL query parameters for initial dashboard route
+  const getInitialTab = (): 'command' | 'client' | 'telemetry' => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab') || params.get('dashboard');
+      if (tab === 'client') return 'client';
+      if (tab === 'telemetry') return 'telemetry';
+      if (tab === 'admin' || tab === 'command') return 'command';
+    }
+    return 'command';
+  };
+
+  const [currentTab, setCurrentTab] = useState<'telemetry' | 'command' | 'client'>(getInitialTab);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [roleModalOpen, setRoleModalOpen] = useState<boolean>(false);
+
   const [selectedZone, setSelectedZone] = useState<string>('Z1_SATHY');
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
   const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
@@ -26,6 +44,37 @@ export const App: React.FC = () => {
   const [customModalOpen, setCustomModalOpen] = useState<boolean>(false);
 
   const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync browser URL parameter when tab changes
+  const handleTabChange = (newTab: 'telemetry' | 'command' | 'client') => {
+    setCurrentTab(newTab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('dashboard', newTab === 'command' ? 'admin' : newTab);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
+  // Initialize Auth: check existing session or auto-login with default demo account
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (getAuthToken()) {
+          const me = await api.getMe();
+          if (me?.user) {
+            setCurrentUser(me.user);
+            return;
+          }
+        }
+        // Auto-login with default admin demo account if no token
+        const loginRes = await api.login('admin', 'AdminPass123!');
+        setCurrentUser(loginRes.user);
+      } catch (err) {
+        console.warn('Initial auth session check completed with fallback:', err);
+      }
+    };
+    initAuth();
+  }, []);
 
   // Load dashboard and timeline data
   const loadDashboardData = useCallback(async (zoneId: string = selectedZone) => {
@@ -118,12 +167,21 @@ export const App: React.FC = () => {
     setRefreshing(false);
   };
 
+  const handleLoginSuccess = (user: UserProfile) => {
+    setCurrentUser(user);
+    if (user.role === 'client') {
+      handleTabChange('client');
+    } else {
+      handleTabChange('command');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Top Global Navigation Bar */}
       <Header
         currentTab={currentTab}
-        onTabChange={setCurrentTab}
+        onTabChange={handleTabChange}
         selectedZone={selectedZone}
         onZoneChange={(newZone) => {
           setSelectedZone(newZone);
@@ -131,6 +189,8 @@ export const App: React.FC = () => {
         }}
         summary={summary}
         backendOnline={backendOnline}
+        currentUser={currentUser}
+        onOpenRoleSwitcher={() => setRoleModalOpen(true)}
         onOpenCustomModal={() => setCustomModalOpen(true)}
         onRefresh={handleManualRefresh}
         refreshing={refreshing}
@@ -151,6 +211,11 @@ export const App: React.FC = () => {
             loadingScenario={loadingScenario}
             onRefreshData={handleManualRefresh}
           />
+        ) : currentTab === 'client' ? (
+          <ClientDashboardPage
+            currentUser={currentUser}
+            onOpenRoleSwitcher={() => setRoleModalOpen(true)}
+          />
         ) : (
           <CommandCenterPage
             summary={summary}
@@ -161,6 +226,9 @@ export const App: React.FC = () => {
               loadDashboardData(newZone);
             }}
             onScenarioReset={handleResetScenario}
+            onSelectOrganization={(_orgId) => {
+              handleTabChange('client');
+            }}
           />
         )}
       </main>
@@ -171,7 +239,7 @@ export const App: React.FC = () => {
           AEGIS-Epi • AI-Powered Public Health Early-Warning & Causal Decision Intelligence Platform
         </div>
         <div className="text-[11px] text-slate-400">
-          TCS AI for Impact Hackathon • Simulated Telemetry Demo Mode • Automated Medical Interventions Disabled
+          TCS AI for Impact Hackathon • Separate Client & Central Public Health Dashboards • Automated Medical Interventions Disabled
         </div>
       </footer>
 
@@ -181,6 +249,14 @@ export const App: React.FC = () => {
         onClose={() => setCustomModalOpen(false)}
         selectedZone={selectedZone}
         onScenarioApplied={() => loadDashboardData(selectedZone)}
+      />
+
+      {/* Identity & Role Switcher Modal */}
+      <RoleSwitcherModal
+        isOpen={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+        currentUser={currentUser}
+        onLoginSuccess={handleLoginSuccess}
       />
     </div>
   );

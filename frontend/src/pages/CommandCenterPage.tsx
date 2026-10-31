@@ -7,6 +7,7 @@ import { ThreeAgentEnginePanel } from '../components/command/ThreeAgentEnginePan
 import { CapacityForecasterPanel } from '../components/command/CapacityForecasterPanel';
 import { RecommendationPlaybook } from '../components/command/RecommendationPlaybook';
 import { GovernanceReviewPanel } from '../components/command/GovernanceReviewPanel';
+import { ConnectedOrganizationsList } from '../components/command/ConnectedOrganizationsList';
 import type { DashboardSummaryResponse, TimelinePoint } from '../types';
 
 interface CommandCenterPageProps {
@@ -15,6 +16,7 @@ interface CommandCenterPageProps {
   selectedZone: string;
   onSelectZone: (zoneId: string) => void;
   onScenarioReset: () => void;
+  onSelectOrganization?: (orgId: string) => void;
 }
 
 export const CommandCenterPage: React.FC<CommandCenterPageProps> = ({
@@ -23,6 +25,7 @@ export const CommandCenterPage: React.FC<CommandCenterPageProps> = ({
   selectedZone,
   onSelectZone,
   onScenarioReset,
+  onSelectOrganization,
 }) => {
   if (!summary) return null;
 
@@ -48,22 +51,28 @@ export const CommandCenterPage: React.FC<CommandCenterPageProps> = ({
         </div>
       </div>
 
-      {/* 3. Signal Attribution Breakdown */}
+      {/* 3. Connected Sentinel Organizations (Edge Client Partners) */}
+      <ConnectedOrganizationsList
+        selectedZone={selectedZone}
+        onSelectOrganization={onSelectOrganization}
+      />
+
+      {/* 4. Signal Attribution Breakdown */}
       <SignalAttribution attributions={summary.signal_attributions} />
 
-      {/* 4. Three-Agent Evidence Evaluation Engine */}
+      {/* 5. Three-Agent Evidence Evaluation Engine */}
       <ThreeAgentEnginePanel agentsData={summary.agent_evaluations} />
 
-      {/* 5. Seven-Day Healthcare Capacity Forecaster */}
+      {/* 6. Seven-Day Healthcare Capacity Forecaster */}
       <CapacityForecasterPanel forecast={summary.capacity_forecast} />
 
-      {/* 6. Dynamic Recommendation Action Playbook */}
+      {/* 7. Dynamic Recommendation Action Playbook */}
       <RecommendationPlaybook
         recommendations={summary.recommendations}
         tier={summary.decision_tier}
       />
 
-      {/* 7. Human-in-the-Loop Governance & Persistent Audit Log */}
+      {/* 8. Human-in-the-Loop Governance & Persistent Audit Log */}
       <GovernanceReviewPanel
         activeScenario={summary.active_scenario}
         selectedZone={selectedZone}
