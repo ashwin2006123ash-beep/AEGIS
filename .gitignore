@@ -1,0 +1,23 @@
+# Node dependencies & build artifacts
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# SQLite databases & logs
+*.db
+*.log
+.DS_Store
+
+# Local secrets & env
+.env
+.env.local
